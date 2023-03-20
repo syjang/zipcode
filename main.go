@@ -3,10 +3,13 @@ package main
 import (
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/fedesog/webdriver"
 	"github.com/tealeg/xlsx"
+	"github.com/tebeka/selenium"
 )
 
 func loadData(name string) {
@@ -66,6 +69,76 @@ func findPostnumber(name string) string {
 	return ""
 }
 
+func loadDatav2(name string) {
+
+	chromeDriver := webdriver.NewChromeDriver("./chromedriver")
+	err := chromeDriver.Start()
+	if err != nil {
+		log.Println(err)
+	}
+
+	desired := webdriver.Capabilities{"Platform": "Windows"}
+	required := webdriver.Capabilities{}
+	session, err := chromeDriver.NewSession(desired, required)
+	if err != nil {
+		log.Println(err)
+	}
+	defer session.Delete()
+	defer chromeDriver.Stop()
+
+	file, err := xlsx.OpenFile(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	targetSheet := file.Sheets[0]
+	for _, row := range targetSheet.Rows {
+		name := row.Cells[0].String()
+		if name == "" {
+			log.Println("종료!")
+			break
+		}
+		log.Println(name, "검색중...")
+		postnumber := findPostNumberV2(name, session)
+		var cell *xlsx.Cell
+		if len(row.Cells) > 2 {
+			cell = row.Cells[1]
+		}
+		cell = row.AddCell()
+		cell.SetValue(postnumber)
+	}
+
+	file.Save("output.xlsx")
+}
+
+func findPostNumberV2(name string, session *webdriver.Session) string {
+	url := "https://search.naver.com/search.naver?sm=tab_hty.top&where=nexearch&query=" + name + "%20우편번호&oquery=" + name + "%20우편번호&tqi=itQFowp0JXossfmUuT8ssssst8V-304727"
+	err := session.Url(url)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+
+	span, err := session.FindElement(selenium.ByCSSSelector, "#loc-main-section-root > section > div > div.uOjIX > div > div.EzDG5 > div.g7j7K > div.Z4lWG > span:nth-child(1)")
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+	str, err := span.Text()
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+	reg, err := regexp.Compile("[0-9]+")
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+	ret := reg.FindAllString(str, -1)
+
+	return ret[0]
+}
+
 func main() {
-	loadData("input.xlsx")
+	loadDatav2("input.xlsx")
 }
